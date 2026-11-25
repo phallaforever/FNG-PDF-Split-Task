@@ -1,0 +1,2106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invoice Splitter (FNG Edition)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <!-- PDF.js 3.11.174 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- pdf-lib 1.17.1 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <!-- JSZip 3.10.1 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    /* Custom subtle scrollbars for dense workspace panels */
+    ::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    .canvas-checkerboard {
+      background-color: #f1f5f9;
+      background-image:
+        linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
+        linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
+        linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-900 font-sans antialiased selection:bg-indigo-100 selection:text-indigo-900 min-h-screen flex flex-col">
+
+  <!-- Top Application Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+    <div class="max-w-[1600px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+      <!-- Brand -->
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900 truncate">Invoice Splitter</h1>
+            <span class="px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">FNG Edition</span>
+          </div>
+          <p id="headerSubtitle" class="text-xs text-slate-500 truncate">64-bit DCT pHash layout boundary detector &amp; batch PDF splitter</p>
+        </div>
+      </div>
+
+      <!-- Global Action Buttons -->
+      <div class="flex items-center gap-2 shrink-0">
+        <button id="btnOpenBulkModal" type="button" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition cursor-pointer" title="Paste or upload names.txt">
+          <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h6" />
+          </svg>
+          <span class="hidden md:inline">Bulk Names</span>
+          <span id="bulkNamesBadge" class="hidden px-1.5 py-0.2 text-[11px] font-semibold rounded-full bg-indigo-100 text-indigo-700">0</span>
+        </button>
+
+        <button id="btnOpenCacheModal" type="button" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition cursor-pointer" title="Manage localStorage FNG signature cache (names.json)">
+          <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+          </svg>
+          <span class="hidden md:inline">Cache</span>
+          <span id="cacheCountBadge" class="px-1.5 py-0.2 text-[11px] font-semibold rounded-full bg-slate-100 text-slate-700">0</span>
+        </button>
+
+        <button id="btnNewBatch" type="button" class="hidden inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition cursor-pointer">
+          <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          <span>New PDF</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main class="flex-1 flex flex-col max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-5 gap-5">
+
+    <!-- STEP 1: Upload & Configuration View -->
+    <section id="uploadSection" class="my-auto max-w-4xl w-full mx-auto space-y-5">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6">
+        <div class="space-y-1">
+          <h2 class="text-xl font-bold text-slate-900">Load Combined Scanned-Invoice PDF</h2>
+          <p class="text-sm text-slate-500">All processing happens 100% locally in your browser. Pages are fingerprinted with 4-rotation 64-bit DCT pHash to detect invoice boundaries automatically.</p>
+        </div>
+
+        <!-- Primary Dropzone -->
+        <div id="primaryDropzone" class="relative group border-2 border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/40 hover:bg-indigo-50/80 rounded-2xl p-8 sm:p-10 text-center transition cursor-pointer">
+          <input id="primaryPdfInput" type="file" accept=".pdf,application/pdf" class="hidden" />
+          <div class="w-14 h-14 mx-auto mb-4 rounded-2xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center group-hover:scale-105 transition">
+            <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+          </div>
+          <p class="text-base font-semibold text-slate-900">Drop your combined invoice PDF here, or <span class="text-indigo-600 underline">browse</span></p>
+          <p class="text-xs text-slate-500 mt-1.5">Supports multi-page scanned PDFs without an OCR text layer (e.g., <code class="font-mono text-slate-700">01-all-of-invoice.pdf</code>)</p>
+          <div id="selectedPrimaryChip" class="hidden mt-4 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-600 text-white text-xs font-medium shadow-xs">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            <span id="selectedPrimaryName">file.pdf</span>
+          </div>
+        </div>
+
+        <!-- Secondary Options Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Existing Split PDFs Dropzone -->
+          <div id="existingDropzone" class="border border-dashed border-slate-300 hover:border-indigo-400 bg-slate-50/70 hover:bg-slate-50 rounded-xl p-4 transition cursor-pointer flex flex-col justify-between">
+            <input id="existingPdfsInput" type="file" accept=".pdf,application/pdf" multiple class="hidden" />
+            <div class="flex items-start gap-3">
+              <div class="w-9 h-9 rounded-lg bg-slate-200/80 text-slate-700 flex items-center justify-center shrink-0 mt-0.5">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                </svg>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-semibold text-slate-800">Existing Split PDFs <span class="text-xs font-normal text-slate-500">(Optional)</span></p>
+                <p class="text-xs text-slate-500 mt-0.5">Upload previously split <code class="font-mono">FNG*.pdf</code> files to learn layout references &amp; auto-match identical invoices (Hamming distance &le; 4).</p>
+              </div>
+            </div>
+            <div class="mt-3 pt-2.5 border-t border-slate-200/80 flex items-center justify-between text-xs">
+              <span id="existingFilesStatus" class="text-slate-600 font-medium">0 reference PDFs selected</span>
+              <button id="btnClearExisting" type="button" class="hidden text-rose-600 hover:text-rose-700 font-medium cursor-pointer">Clear</button>
+            </div>
+          </div>
+
+          <!-- Algorithm & Reference Settings -->
+          <div class="border border-slate-200 bg-slate-50/70 rounded-xl p-4 flex flex-col justify-between space-y-3">
+            <div class="space-y-2.5">
+              <label class="flex items-start gap-2.5 cursor-pointer">
+                <input id="chkNoLearn" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                <div>
+                  <span class="text-sm font-medium text-slate-800">Use Built-in Layout References only</span>
+                  <p class="text-xs text-slate-500">Equivalent to <code class="font-mono">--no-learn</code>. Ignores uploaded reference files for boundary detection.</p>
+                </div>
+              </label>
+
+              <label class="flex items-start gap-2.5 cursor-pointer">
+                <input id="chkNoCache" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                <div>
+                  <span class="text-sm font-medium text-slate-800">Disable localStorage name cache</span>
+                  <p class="text-xs text-slate-500">Equivalent to <code class="font-mono">--no-cache</code>. Do not auto-fill or save to <code class="font-mono">names.json</code> cache.</p>
+                </div>
+              </label>
+            </div>
+
+            <div class="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+              <label for="inputManualBoundaries" class="text-xs font-medium text-slate-700 shrink-0">Manual starts:</label>
+              <input id="inputManualBoundaries" type="text" placeholder="e.g. 1,3,5 or 1,3-5" class="w-full max-w-[200px] px-2.5 py-1 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Progress Bar (hidden until processing starts) -->
+        <div id="processingBox" class="hidden bg-slate-900 text-white rounded-xl p-4 space-y-2.5">
+          <div class="flex items-center justify-between text-xs font-medium">
+            <span id="processingLabel" class="flex items-center gap-2">
+              <svg class="w-4 h-4 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+              <span>Initializing PDF engine...</span>
+            </span>
+            <span id="processingPercent" class="font-mono text-indigo-300">0%</span>
+          </div>
+          <div class="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
+            <div id="processingBar" class="h-full bg-indigo-500 transition-all duration-150 rounded-full" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Analyze Action -->
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+          <div class="text-xs text-slate-500">
+            Tip: Have a list of FNG numbers? Load them via <button id="btnInlineBulk" type="button" class="text-indigo-600 font-medium hover:underline cursor-pointer">Bulk Names (names.txt)</button> before or after analyzing.
+          </div>
+          <button id="btnAnalyzePdf" type="button" disabled class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold text-sm shadow-sm transition cursor-pointer">
+            <span>Analyze &amp; Detect Invoices</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 2: Interactive Workspace View -->
+    <section id="workspaceSection" class="hidden flex-1 flex flex-col gap-4 min-h-0">
+
+      <!-- Summary & Export Toolbar -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-3.5 sm:px-5 flex flex-wrap items-center justify-between gap-3">
+        <!-- Stats Pills -->
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 font-semibold">
+            <span id="statInvoicesCount">0</span> Invoices
+          </span>
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 font-medium">
+            <span id="statPagesCount">0</span> Pages
+          </span>
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+            <span id="statNamedCount">0</span> Named
+          </span>
+          <span id="statUnnamedPill" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 font-medium">
+            <span id="statUnnamedCount">0</span> Unnamed
+          </span>
+          <span id="statLowConfPill" class="hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-medium" title="Low-confidence boundaries detected (|margin| < 8)">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span id="statLowConfCount">0</span> Low Conf.
+          </span>
+          <span id="refsSourceTag" class="hidden xl:inline-flex items-center px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-medium">
+            Refs: built-in
+          </span>
+        </div>
+
+        <!-- Batch Actions -->
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="btnFillPlaceholders" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition cursor-pointer" title="Fill remaining unnamed invoices with FNG-UNKNOWN-pX-Y">
+            <span>Fill Placeholders</span>
+          </button>
+
+          <button id="btnDownloadCsv" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition cursor-pointer" title="Download report.csv">
+            <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>report.csv</span>
+          </button>
+
+          <button id="btnDownloadZip" type="button" class="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition cursor-pointer">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            <span id="btnDownloadZipLabel">Download ZIP (0 PDFs)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Horizontal Page Strip / Boundary Editor -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-3">
+        <div class="flex items-center justify-between mb-2 px-1">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Page Strip &amp; Boundary Editor</span>
+            <span class="text-[11px] text-slate-400 hidden sm:inline">Click <strong class="text-slate-600">Split / Merge</strong> on any page (2+) to toggle invoice boundaries</span>
+          </div>
+          <button id="btnResetBoundaries" type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-700 hover:underline cursor-pointer">
+            Auto-Detect Boundaries
+          </button>
+        </div>
+        <div id="pageStripContainer" class="flex items-stretch gap-2.5 overflow-x-auto pb-2 pt-1 px-1">
+          <!-- Page thumbnail cards injected dynamically -->
+        </div>
+      </div>
+
+      <!-- Split-View Invoice Queue (Left) & High-Res Inspector (Right) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-[560px]">
+
+        <!-- Left Panel: Invoice Queue -->
+        <div class="lg:col-span-5 xl:col-span-4 bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col overflow-hidden max-h-[760px]">
+          <!-- Queue Filter Header -->
+          <div class="p-3 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-1 bg-slate-200/70 p-0.5 rounded-lg text-xs font-medium">
+              <button type="button" data-filter="all" class="queue-filter-btn px-2.5 py-1 rounded-md bg-white text-slate-900 shadow-2xs cursor-pointer">All</button>
+              <button type="button" data-filter="unnamed" class="queue-filter-btn px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 cursor-pointer">Unnamed</button>
+              <button type="button" data-filter="lowconf" class="queue-filter-btn px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 cursor-pointer">Low Conf.</button>
+            </div>
+            <span class="text-[11px] text-slate-400 font-mono">Enter = Next</span>
+          </div>
+
+          <!-- Scrollable Invoice List -->
+          <div id="invoiceQueueList" class="flex-1 overflow-y-auto divide-y divide-slate-100 p-2 space-y-1.5">
+            <!-- Invoice cards injected dynamically -->
+          </div>
+        </div>
+
+        <!-- Right Panel: High-Res Invoice Inspector -->
+        <div class="lg:col-span-7 xl:col-span-8 bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col overflow-hidden min-h-[540px] max-h-[760px]">
+          <!-- Inspector Top Controls -->
+          <div class="p-3 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+            <!-- Selected Invoice Info & Multi-page Switcher -->
+            <div class="flex items-center gap-2.5">
+              <span id="inspectorInvoiceBadge" class="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-bold">Invoice #1</span>
+              <div class="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
+                <button id="btnPrevInvoicePage" type="button" class="p-1 rounded hover:bg-slate-100 disabled:opacity-40 cursor-pointer" title="Previous page in invoice">
+                  <svg class="w-4 h-4 text-slate-700" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <span id="inspectorPageIndicator" class="px-2 text-xs font-medium text-slate-700 font-mono">Page 1 of 1</span>
+                <button id="btnNextInvoicePage" type="button" class="p-1 rounded hover:bg-slate-100 disabled:opacity-40 cursor-pointer" title="Next page in invoice">
+                  <svg class="w-4 h-4 text-slate-700" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+              <span id="inspectorHashMargin" class="hidden sm:inline-block text-xs font-mono text-slate-500">margin: +0</span>
+            </div>
+
+            <!-- Zoom & Rotation Controls -->
+            <div class="flex items-center gap-1.5">
+              <button id="btnRotateLeft" type="button" class="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer" title="Rotate 90° Counter-Clockwise">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+              </button>
+              <button id="btnRotateRight" type="button" class="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer" title="Rotate 90° Clockwise">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 10H11a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />
+                </svg>
+              </button>
+              <div class="h-4 w-px bg-slate-200 mx-0.5"></div>
+              <button id="btnZoomOut" type="button" class="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer" title="Zoom Out">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M20 12H4" />
+                </svg>
+              </button>
+              <button id="btnZoomFit" type="button" class="px-2 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-mono font-medium text-slate-700 cursor-pointer" title="Fit to width">
+                Fit
+              </button>
+              <button id="btnZoomIn" type="button" class="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer" title="Zoom In">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Zoomable Scrollable Canvas Viewport -->
+          <div id="inspectorViewport" class="flex-1 overflow-auto canvas-checkerboard p-4 flex items-start justify-center relative">
+            <canvas id="inspectorCanvas" class="shadow-lg bg-white rounded-xs transition-transform duration-100"></canvas>
+          </div>
+
+          <!-- Bottom Quick-Entry Bar synced with active invoice -->
+          <div class="p-3 border-t border-slate-200 bg-white flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+            <label for="inspectorQuickInput" class="text-xs font-semibold text-slate-700 shrink-0">FNG Number:</label>
+            <div class="relative flex-1">
+              <input id="inspectorQuickInput" type="text" placeholder="Type handwritten FNG number & press Enter..." class="w-full px-3 py-2 text-sm font-mono bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono pointer-events-none">.pdf</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="btnInspectorNextUnnamed" type="button" class="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer">
+                <span>Save &amp; Next</span>
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              <button id="btnInspectorDownloadSingle" type="button" class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium transition cursor-pointer" title="Download this invoice PDF">
+                <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>PDF</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODAL: Bulk Names (names.txt) -->
+  <div id="bulkNamesModal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-bold text-slate-900">Bulk Names (<code class="font-mono text-indigo-600">names.txt</code>)</h3>
+          <p class="text-xs text-slate-500">One FNG name per line. Blank lines and <code class="font-mono">#</code> comments are ignored.</p>
+        </div>
+        <button type="button" data-close-modal="bulkNamesModal" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div class="flex items-center justify-between">
+          <label class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-xs font-medium text-slate-700 cursor-pointer">
+            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <span>Upload .txt file</span>
+            <input id="bulkNamesFileInput" type="file" accept=".txt,text/plain" class="hidden" />
+          </label>
+          <span id="bulkParsedCount" class="text-xs font-medium text-slate-600">0 valid names</span>
+        </div>
+
+        <textarea id="bulkNamesTextarea" rows="8" placeholder="# Example names.txt&#10;FNG-2026-001&#10;FNG-2026-002&#10;FNG-2026-003" class="w-full p-3 text-xs font-mono bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button id="btnClearBulkNames" type="button" class="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer">Clear</button>
+          <button id="btnApplyBulkNames" type="button" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs cursor-pointer">Save &amp; Apply to Unnamed</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Signature Cache (names.json) -->
+  <div id="cacheModal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-bold text-slate-900">Signature Cache (<code class="font-mono text-indigo-600">names.json</code>)</h3>
+          <p class="text-xs text-slate-500">Maps SHA-1 page-hash group signatures to sanitized FNG filenames in <code class="font-mono">localStorage</code>.</p>
+        </div>
+        <button type="button" data-close-modal="cacheModal" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 max-h-60 overflow-y-auto">
+          <pre id="cachePreviewJson" class="text-[11px] font-mono text-slate-700 whitespace-pre-wrap break-all">{}</pre>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <button id="btnExportCache" type="button" class="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 cursor-pointer">Export names.json</button>
+            <label class="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 cursor-pointer">
+              <span>Import JSON</span>
+              <input id="importCacheInput" type="file" accept=".json,application/json" class="hidden" />
+            </label>
+          </div>
+          <button id="btnClearCache" type="button" class="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold cursor-pointer">Clear Cache</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Encrypted PDF Password Prompt -->
+  <div id="passwordModal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-sm w-full overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200">
+        <h3 class="text-base font-bold text-slate-900">Encrypted PDF</h3>
+        <p id="passwordModalDesc" class="text-xs text-slate-500 mt-0.5">Enter the password to decrypt this PDF file.</p>
+      </div>
+      <form id="passwordForm" class="p-5 space-y-4">
+        <input id="pdfPasswordInput" type="password" placeholder="PDF Password" required class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <div class="flex items-center justify-end gap-2">
+          <button id="btnCancelPassword" type="button" class="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer">Cancel</button>
+          <button type="submit" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold cursor-pointer">Unlock PDF</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none max-w-sm w-full px-4 sm:px-0"></div>
+
+  <script>
+    // Configure PDF.js worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    /**
+     * Exact BUILTIN_REFS ported from split_invoices.py
+     */
+    const BUILTIN_REFS = {
+      first: [
+        ["ef6f46c0c0c8697c", "c9aa965492b4b597", "bac5136a95623cd6", "9c00c3fec71ee03d"],
+        ["ef6fc0c05b7864c4", "e4aa935199969d99", "bac4956a1ed2316e", "b100c6fbcc3cc877"],
+        ["ef6fc4c47861c4c4", "e6aa995d88a69593", "bac591662dc79166", "b300ccf7dd0cc83b"],
+        ["ef6ec6c04a6b64a4", "e4aa9a5599a2b9d1", "bac4936a3ec5390e", "b100c7ffcc08ec73"],
+      ],
+      cont: [
+        ["b636d2cbc9c9c834", "eb6b94b44b94a549", "e39887619c639d9a", "bec1c11e1e2ee0e3"],
+        ["f8c68639c639b1c6", "be9cc3c3c13c3c43", "ad6cd2939393e464", "eb369669909669c9"],
+        ["ad64d2939393e46c", "eb369469949669c9", "f8c68739c63991c6", "be9cc1c3c13c3c63"],
+        ["bfe0c01fc01f1fe0", "bc3c94c3c3c3c3c3", "ea4a95b595b54a4a", "e996c16996699669"],
+        ["faa5855aa55a52a5", "bec39cc3c13cc13c", "af0fd0f0f0f0070f", "eb69c96994969496"],
+        ["cab4a54bb44bad94", "bec12e1cc33ec163", "9f1ee0c1e1e1f01e", "eb6b6a96949494c9"],
+        ["b838e0c7c7c3f838", "e96bb69696494949", "e892256d9269ad92", "bcc1e33cc3631c63"],
+        ["bd3961c3c2c6963c", "cb6bb49694924ba5", "e8973469976c8396", "9ec3e13cc1781e0f"],
+        ["b83870c6c7c7c64b", "eb6ab5b5944a4a4a", "e992256d926d92e5", "bec0e01fe1e01fe2"],
+      ],
+    };
+
+    const ROTATIONS = [0, 90, 180, 270];
+    const ILLEGAL_CHARS = /[<>:"/\\|?*\x00-\x1f]/g;
+    const RESERVED_NAMES = new Set([
+      "CON", "PRN", "AUX", "NUL",
+      ...Array.from({ length: 9 }, (_, i) => `COM${i + 1}`),
+      ...Array.from({ length: 9 }, (_, i) => `LPT${i + 1}`),
+    ]);
+    const CACHE_STORAGE_KEY = "fng_invoice_splitter_names_cache_v1";
+
+    /**
+     * Application State
+     */
+    const state = {
+      primaryFile: null,
+      primaryBytes: null,       // Uint8Array of original PDF for pdf-lib
+      pdfJsDoc: null,           // PDFDocumentProxy for high-res rendering
+      existingFiles: [],        // File[]
+      pages: [],                // { index, hashes: [h0,h90,h180,h270], thumbDataUrl, margin, dFirst, dCont }
+      existingPdfs: [],         // { stem, pageHashes: [[h0,h90,h180,h270], ...] }
+      firstRefs: [],
+      contRefs: [],
+      refsSource: "built-in",
+      starts: [],               // Sorted 0-based page indices where invoices begin
+      invoices: [],             // { id, start, end, margin, name, source, status, detail, signature }
+      bulkNames: [],            // string[] from names.txt
+      cache: {},                // { [sha1Signature]: sanitizedFngName }
+      selectedInvoiceIdx: 0,
+      selectedSubPageOffset: 0, // Offset within selected invoice (0 .. end-start)
+      inspectorRotation: 0,     // Visual rotation in degrees (0, 90, 180, 270)
+      inspectorZoom: 'fit',     // 'fit' or numeric scale factor
+      queueFilter: 'all',       // 'all' | 'unnamed' | 'lowconf'
+    };
+
+    /**
+     * Precompute 32x32 Type-II DCT orthonormal basis matrix for fast, exact 2D DCT
+     */
+    const DCT_N = 32;
+    const DCT_COS = (() => {
+      const table = Array.from({ length: DCT_N }, () => new Float64Array(DCT_N));
+      for (let u = 0; u < DCT_N; u++) {
+        const alpha = u === 0 ? Math.sqrt(1 / DCT_N) : Math.sqrt(2 / DCT_N);
+        for (let x = 0; x < DCT_N; x++) {
+          table[u][x] = alpha * Math.cos(((2 * x + 1) * u * Math.PI) / (2 * DCT_N));
+        }
+      }
+      return table;
+    })();
+
+    /**
+     * Compute 2D DCT top-left 8x8 coefficients from a 32x32 grayscale Float64Array
+     */
+    function dct2dTop8x8(gray32x32) {
+      // First 1D DCT across rows for u = 0..31 (we need all 32 rows for column DCT, or only rows needed?
+      // Wait: column DCT for v < 8 needs all 32 rows y=0..31, and row DCT only needs u < 8!)
+      const rowTransformed = new Float64Array(DCT_N * 8);
+      for (let y = 0; y < DCT_N; y++) {
+        const rowOffset = y * DCT_N;
+        for (let u = 0; u < 8; u++) {
+          let sum = 0;
+          const cosU = DCT_COS[u];
+          for (let x = 0; x < DCT_N; x++) {
+            sum += gray32x32[rowOffset + x] * cosU[x];
+          }
+          rowTransformed[y * 8 + u] = sum;
+        }
+      }
+
+      const coeffs = new Float64Array(64);
+      for (let v = 0; v < 8; v++) {
+        const cosV = DCT_COS[v];
+        for (let u = 0; u < 8; u++) {
+          let sum = 0;
+          for (let y = 0; y < DCT_N; y++) {
+            sum += rowTransformed[y * 8 + u] * cosV[y];
+          }
+          coeffs[v * 8 + u] = sum;
+        }
+      }
+      return coeffs;
+    }
+
+    /**
+     * Compute 64-bit perceptual hash (16-char lowercase hex) from a 32x32 grayscale array
+     * Matches Python:
+     *   coeffs = cv2.dct(small)[:8, :8].flatten()
+     *   bits = coeffs > np.median(coeffs[1:])
+     */
+    function phash64FromGray32(gray32x32) {
+      const coeffs = dct2dTop8x8(gray32x32);
+      const ac = Array.from(coeffs.slice(1)).sort((a, b) => a - b);
+      // 63 elements -> exact middle element is index 31
+      const median = ac[31];
+      let hash = 0n;
+      for (let i = 0; i < 64; i++) {
+        hash = (hash << 1n) | (coeffs[i] > median ? 1n : 0n);
+      }
+      return hash.toString(16).padStart(16, '0');
+    }
+
+    /**
+     * Downsample RGBA canvas image data cleanly to 32x32 grayscale using box/area averaging
+     * (approximates PIL LANCZOS downsampling from large scan to 32x32 without aliasing)
+     */
+    function downsampleToGray32(ctx, width, height) {
+      const imgData = ctx.getImageData(0, 0, width, height).data;
+      const gray = new Float64Array(DCT_N * DCT_N);
+      const scaleX = width / DCT_N;
+      const scaleY = height / DCT_N;
+
+      for (let ty = 0; ty < DCT_N; ty++) {
+        const y0 = Math.floor(ty * scaleY);
+        const y1 = Math.min(height, Math.max(y0 + 1, Math.ceil((ty + 1) * scaleY)));
+        for (let tx = 0; tx < DCT_N; tx++) {
+          const x0 = Math.floor(tx * scaleX);
+          const x1 = Math.min(width, Math.max(x0 + 1, Math.ceil((tx + 1) * scaleX)));
+          let sum = 0;
+          let count = 0;
+          for (let y = y0; y < y1; y++) {
+            const rowStart = y * width * 4;
+            for (let x = x0; x < x1; x++) {
+              const idx = rowStart + x * 4;
+              // ITU-R BT.601 luma matching PIL convert("L")
+              sum += 0.299 * imgData[idx] + 0.587 * imgData[idx + 1] + 0.114 * imgData[idx + 2];
+              count++;
+            }
+          }
+          gray[ty * DCT_N + tx] = count > 0 ? sum / count : 255;
+        }
+      }
+      return gray;
+    }
+
+    /**
+     * Compute 4-rotation (0, 90, 180, 270 clockwise) pHashes for a rendered page canvas
+     */
+    function computePageHashesFromCanvas(baseCanvas) {
+      const hashes = [];
+      const rotCanvas = document.createElement('canvas');
+      const rotCtx = rotCanvas.getContext('2d', { willReadFrequently: true });
+
+      for (const angle of ROTATIONS) {
+        if (angle === 0) {
+          const baseCtx = baseCanvas.getContext('2d', { willReadFrequently: true });
+          const gray = downsampleToGray32(baseCtx, baseCanvas.width, baseCanvas.height);
+          hashes.push(phash64FromGray32(gray));
+        } else {
+          const swap = angle === 90 || angle === 270;
+          rotCanvas.width = swap ? baseCanvas.height : baseCanvas.width;
+          rotCanvas.height = swap ? baseCanvas.width : baseCanvas.height;
+          rotCtx.save();
+          rotCtx.fillStyle = '#ffffff';
+          rotCtx.fillRect(0, 0, rotCanvas.width, rotCanvas.height);
+          rotCtx.translate(rotCanvas.width / 2, rotCanvas.height / 2);
+          rotCtx.rotate((angle * Math.PI) / 180);
+          rotCtx.drawImage(baseCanvas, -baseCanvas.width / 2, -baseCanvas.height / 2);
+          rotCtx.restore();
+
+          const gray = downsampleToGray32(rotCtx, rotCanvas.width, rotCanvas.height);
+          hashes.push(phash64FromGray32(gray));
+        }
+      }
+      return hashes;
+    }
+
+    /**
+     * 64-bit Hamming distance between two 16-char hex strings
+     */
+    function hamming64(hexA, hexB) {
+      let xor = BigInt('0x' + hexA) ^ BigInt('0x' + hexB);
+      let count = 0;
+      while (xor > 0n) {
+        xor &= xor - 1n;
+        count++;
+      }
+      return count;
+    }
+
+    /**
+     * Minimum Hamming distance across all 4 rotations of two page hash tuples
+     */
+    function pageDistance(tupleA, tupleB) {
+      let min = 64;
+      for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+          const d = hamming64(tupleA[i], tupleB[j]);
+          if (d < min) min = d;
+          if (min === 0) return 0;
+        }
+      }
+      return min;
+    }
+
+    /**
+     * SHA-1 group signature matching Python:
+     * hashlib.sha1("|".join(pages[i].hashes[0] for i in range(start, end + 1)).encode("ascii")).hexdigest()
+     */
+    async function computeGroupSignature(start, end, pages) {
+      const raw = pages
+        .slice(start, end + 1)
+        .map((p) => p.hashes[0])
+        .join('|');
+      const data = new TextEncoder().encode(raw);
+      const hashBuffer = await crypto.subtle.digest('SHA-1', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    /**
+     * Sanitize FNG filename matching sanitize_name() in split_invoices.py
+     */
+    function sanitizeName(raw) {
+      if (!raw) return '';
+      let name = String(raw).trim().replace(/^["']+|["']+$/g, '');
+      // Strip path segments
+      name = name.split(/[/\\]/).pop() || '';
+      if (name.toLowerCase().endsWith('.pdf')) {
+        name = name.slice(0, -4);
+      }
+      name = name.replace(ILLEGAL_CHARS, '_').trim().replace(/\.+$/, '');
+      if (!name) return '';
+      if (name.slice(0, 3).toLowerCase() === 'fng') {
+        name = 'FNG' + name.slice(3);
+      }
+      if (RESERVED_NAMES.has(name.toUpperCase())) {
+        name = '_' + name;
+      }
+      return name.slice(0, 150);
+    }
+
+    /**
+     * Parse manual boundary string like "1,3,5" or "1,3-5" into sorted 0-based start indices
+     */
+    function parseBoundaries(value, totalPages) {
+      const numbers = [];
+      for (const rawPart of value.split(',')) {
+        const part = rawPart.trim();
+        if (!part) continue;
+        if (part.includes('-')) {
+          const [lStr, rStr] = part.split('-', 2);
+          const left = parseInt(lStr.trim(), 10);
+          const right = parseInt(rStr.trim(), 10);
+          if (isNaN(left) || isNaN(right) || left > right) {
+            throw new Error(`Invalid boundary range: "${part}"`);
+          }
+          for (let n = left; n <= right; n++) numbers.push(n);
+        } else {
+          const n = parseInt(part, 10);
+          if (isNaN(n)) throw new Error(`Invalid boundary page: "${part}"`);
+          numbers.push(n);
+        }
+      }
+      const invalid = numbers.filter((n) => n < 1 || n > totalPages);
+      if (invalid.length > 0) {
+        throw new Error(`Boundary page(s) out of range (1-${totalPages}): ${invalid.join(', ')}`);
+      }
+      const starts = Array.from(new Set(numbers.map((n) => n - 1)));
+      if (!starts.includes(0)) starts.unshift(0);
+      return starts.sort((a, b) => a - b);
+    }
+
+    /**
+     * Deduplicate 4-tuples of hashes
+     */
+    function dedupeHashes(tuples) {
+      const seen = new Set();
+      const out = [];
+      for (const t of tuples) {
+        const key = t.join(',');
+        if (!seen.has(key)) {
+          seen.add(key);
+          out.push(t);
+        }
+      }
+      return out;
+    }
+
+    /**
+     * Build layout references from existing split PDFs or fallback to BUILTIN_REFS
+     */
+    function buildRefs(existingPdfs, noLearn) {
+      if (!noLearn && existingPdfs.length > 0) {
+        const firstRaw = existingPdfs.filter((ex) => ex.pageHashes.length > 0).map((ex) => ex.pageHashes[0]);
+        const contRaw = existingPdfs.flatMap((ex) => ex.pageHashes.slice(1));
+        const first = firstRaw.length > 0 ? dedupeHashes(firstRaw) : BUILTIN_REFS.first;
+        const cont = contRaw.length > 0 ? dedupeHashes(contRaw) : BUILTIN_REFS.cont;
+        return {
+          firstRefs: first,
+          contRefs: cont,
+          refsSource: `learned from ${existingPdfs.length} existing file(s)`,
+        };
+      }
+      return {
+        firstRefs: BUILTIN_REFS.first,
+        contRefs: BUILTIN_REFS.cont,
+        refsSource: 'built-in',
+      };
+    }
+
+    /**
+     * Find exact layout match in existing split PDFs (max Hamming distance <= 4)
+     */
+    function findExistingMatch(start, end, pages, existingPdfs) {
+      const group = pages.slice(start, end + 1).map((p) => p.hashes);
+      let bestScore = null;
+      let bestFile = null;
+
+      for (const candidate of existingPdfs) {
+        if (candidate.pageHashes.length !== group.length) continue;
+        const distances = group.map((gHash, idx) => pageDistance(gHash, candidate.pageHashes[idx]));
+        const worst = Math.max(...distances);
+        if (worst > 4) continue;
+        const avg = distances.reduce((a, b) => a + b, 0) / distances.length;
+        const stemLower = candidate.stem.toLowerCase();
+
+        const isBetter =
+          !bestScore ||
+          worst < bestScore[0] ||
+          (worst === bestScore[0] && avg < bestScore[1]) ||
+          (worst === bestScore[0] && avg === bestScore[1] && stemLower < bestScore[2]);
+
+        if (isBetter) {
+          bestScore = [worst, avg, stemLower];
+          bestFile = candidate;
+        }
+      }
+      return bestFile;
+    }
+
+    function confidenceLabel(margin) {
+      if (margin >= 10) return 'High';
+      if (margin >= 5) return 'Medium';
+      return 'Low';
+    }
+
+    /**
+     * Toast Notification System (replaces alert())
+     */
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const colors = {
+        info: 'bg-slate-900 text-white border-slate-700',
+        success: 'bg-emerald-900 text-emerald-50 border-emerald-700',
+        warning: 'bg-amber-900 text-amber-50 border-amber-700',
+        error: 'bg-rose-900 text-rose-50 border-rose-700',
+      };
+      const el = document.createElement('div');
+      el.className = `pointer-events-auto px-4 py-3 rounded-xl border shadow-lg text-xs font-medium flex items-center justify-between gap-3 transition-all duration-200 ${colors[type] || colors.info}`;
+      el.innerHTML = `<span>${escapeHtml(message)}</span>`;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(6px)';
+        setTimeout(() => el.remove(), 200);
+      }, 3800);
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    /**
+     * LocalStorage Cache Management
+     */
+    function loadCacheFromStorage() {
+      try {
+        const raw = localStorage.getItem(CACHE_STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function saveCacheToStorage() {
+      if (document.getElementById('chkNoCache').checked) return;
+      try {
+        localStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(state.cache));
+      } catch {
+        // Ignore storage quota errors
+      }
+      updateCacheUi();
+    }
+
+    function updateCacheUi() {
+      const count = Object.keys(state.cache).length;
+      document.getElementById('cacheCountBadge').textContent = count;
+      document.getElementById('cachePreviewJson').textContent = JSON.stringify(state.cache, null, 2);
+    }
+
+    /**
+     * Password Prompt Modal Promise Helper
+     */
+    function requestPdfPassword(filename) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('passwordModal');
+        const desc = document.getElementById('passwordModalDesc');
+        const input = document.getElementById('pdfPasswordInput');
+        const form = document.getElementById('passwordForm');
+        const cancelBtn = document.getElementById('btnCancelPassword');
+
+        desc.textContent = `Enter the password to decrypt "${filename}".`;
+        input.value = '';
+        modal.classList.remove('hidden');
+        setTimeout(() => input.focus(), 50);
+
+        const cleanup = () => {
+          modal.classList.add('hidden');
+          form.removeEventListener('submit', onSubmit);
+          cancelBtn.removeEventListener('click', onCancel);
+        };
+        const onSubmit = (e) => {
+          e.preventDefault();
+          cleanup();
+          resolve(input.value);
+        };
+        const onCancel = () => {
+          cleanup();
+          resolve(null);
+        };
+
+        form.addEventListener('submit', onSubmit);
+        cancelBtn.addEventListener('click', onCancel);
+      });
+    }
+
+    /**
+     * Load a PDFDocumentProxy via PDF.js, handling encrypted files gracefully
+     */
+    async function openPdfJsDocument(uint8Bytes, filename) {
+      let password = undefined;
+      while (true) {
+        try {
+          const loadingTask = pdfjsLib.getDocument({
+            data: uint8Bytes.slice(), // pass copy so worker transfer doesn't detach original
+            password,
+          });
+          return await loadingTask.promise;
+        } catch (err) {
+          if (err && err.name === 'PasswordException') {
+            const entered = await requestPdfPassword(filename);
+            if (entered === null) {
+              throw new Error(`Password cancelled for ${filename}`);
+            }
+            password = entered;
+          } else {
+            throw err;
+          }
+        }
+      }
+    }
+
+    /**
+     * Render a PDF.js page to an offscreen canvas at a target width
+     */
+    async function renderPageToCanvas(pdfDoc, pageNum1Based, targetWidth = 480) {
+      const page = await pdfDoc.getPage(pageNum1Based);
+      const unscaledViewport = page.getViewport({ scale: 1 });
+      const scale = targetWidth / unscaledViewport.width;
+      const viewport = page.getViewport({ scale });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(viewport.width));
+      canvas.height = Math.max(1, Math.round(viewport.height));
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      return canvas;
+    }
+
+    /**
+     * Process an uploaded reference PDF to extract its page pHashes
+     */
+    async function extractReferencePdfHashes(file) {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const doc = await openPdfJsDocument(bytes, file.name);
+      const pageHashes = [];
+      for (let p = 1; p <= doc.numPages; p++) {
+        const canvas = await renderPageToCanvas(doc, p, 384);
+        pageHashes.push(computePageHashesFromCanvas(canvas));
+      }
+      const stem = file.name.replace(/\.pdf$/i, '');
+      return { stem, pageHashes };
+    }
+
+    /**
+     * Main Analysis Pipeline
+     */
+    async function runAnalysis() {
+      if (!state.primaryFile) return;
+
+      const btnAnalyze = document.getElementById('btnAnalyzePdf');
+      const processingBox = document.getElementById('processingBox');
+      const processingLabel = document.getElementById('processingLabel').querySelector('span');
+      const processingPercent = document.getElementById('processingPercent');
+      const processingBar = document.getElementById('processingBar');
+
+      btnAnalyze.disabled = true;
+      processingBox.classList.remove('hidden');
+
+      const updateProgress = (pct, text) => {
+        const clamped = Math.min(100, Math.max(0, Math.round(pct)));
+        processingBar.style.width = `${clamped}%`;
+        processingPercent.textContent = `${clamped}%`;
+        processingLabel.textContent = text;
+      };
+
+      try {
+        updateProgress(4, 'Reading combined PDF bytes...');
+        const buffer = await state.primaryFile.arrayBuffer();
+        state.primaryBytes = new Uint8Array(buffer);
+        state.pdfJsDoc = await openPdfJsDocument(state.primaryBytes, state.primaryFile.name);
+
+        const totalPages = state.pdfJsDoc.numPages;
+        if (totalPages === 0) {
+          throw new Error('Input PDF has 0 pages.');
+        }
+
+        // Parse optional existing reference PDFs
+        state.existingPdfs = [];
+        if (state.existingFiles.length > 0) {
+          for (let i = 0; i < state.existingFiles.length; i++) {
+            const refFile = state.existingFiles[i];
+            updateProgress(
+              5 + (i / state.existingFiles.length) * 15,
+              `Fingerprinting reference (${i + 1}/${state.existingFiles.length}): ${refFile.name}`
+            );
+            try {
+              const ex = await extractReferencePdfHashes(refFile);
+              if (ex.pageHashes.length > 0) state.existingPdfs.push(ex);
+            } catch (err) {
+              showToast(`Skipped reference ${refFile.name}: ${err.message}`, 'warning');
+            }
+          }
+        }
+
+        const noLearn = document.getElementById('chkNoLearn').checked;
+        const { firstRefs, contRefs, refsSource } = buildRefs(state.existingPdfs, noLearn);
+        state.firstRefs = firstRefs;
+        state.contRefs = contRefs;
+        state.refsSource = refsSource;
+
+        // Render & compute 4-rotation pHash + thumbnail for each page of combined PDF
+        state.pages = [];
+        for (let p = 1; p <= totalPages; p++) {
+          updateProgress(
+            20 + ((p - 1) / totalPages) * 72,
+            `Fingerprinting page ${p} of ${totalPages} (4-rotation 64-bit DCT pHash)...`
+          );
+          const canvas = await renderPageToCanvas(state.pdfJsDoc, p, 384);
+          const hashes = computePageHashesFromCanvas(canvas);
+
+          // Create compact JPEG thumbnail for the horizontal page strip
+          const thumbCanvas = document.createElement('canvas');
+          const thumbW = 110;
+          const thumbH = Math.round((canvas.height / canvas.width) * thumbW);
+          thumbCanvas.width = thumbW;
+          thumbCanvas.height = thumbH;
+          thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, thumbW, thumbH);
+          const thumbDataUrl = thumbCanvas.toDataURL('image/jpeg', 0.72);
+
+          const dFirst = Math.min(...firstRefs.map((ref) => pageDistance(hashes, ref)));
+          const dCont = Math.min(...contRefs.map((ref) => pageDistance(hashes, ref)));
+          const margin = dCont - dFirst;
+
+          state.pages.push({
+            index: p - 1,
+            hashes,
+            thumbDataUrl,
+            dFirst,
+            dCont,
+            margin,
+          });
+        }
+
+        updateProgress(95, 'Classifying invoice boundaries & matching names...');
+
+        // Determine initial boundaries
+        const manualBoundariesRaw = document.getElementById('inputManualBoundaries').value.trim();
+        if (manualBoundariesRaw) {
+          state.starts = parseBoundaries(manualBoundariesRaw, totalPages);
+        } else {
+          state.starts = detectAutoStarts();
+        }
+
+        await rebuildInvoicesFromStarts(true);
+
+        updateProgress(100, 'Done!');
+        setTimeout(() => {
+          processingBox.classList.add('hidden');
+          document.getElementById('uploadSection').classList.add('hidden');
+          document.getElementById('workspaceSection').classList.remove('hidden');
+          document.getElementById('btnNewBatch').classList.remove('hidden');
+          document.getElementById('headerSubtitle').textContent = `${state.primaryFile.name} • ${totalPages} pages`;
+          renderAllWorkspace();
+
+          // Focus first unnamed invoice if available
+          const firstUnnamed = state.invoices.findIndex((inv) => !inv.name);
+          selectInvoice(firstUnnamed >= 0 ? firstUnnamed : 0, true);
+        }, 200);
+      } catch (err) {
+        processingBox.classList.add('hidden');
+        btnAnalyze.disabled = false;
+        showToast(err.message || 'Failed to process PDF', 'error');
+      }
+    }
+
+    /**
+     * Auto-detect invoice start indices where dFirst < dCont (always includes page 0)
+     */
+    function detectAutoStarts() {
+      const starts = [];
+      for (const page of state.pages) {
+        if (page.dFirst < page.dCont) {
+          starts.push(page.index);
+        }
+      }
+      if (!starts.includes(0)) starts.unshift(0);
+      return Array.from(new Set(starts)).sort((a, b) => a - b);
+    }
+
+    /**
+     * Rebuild invoices array from state.starts, preserving manual edits or re-matching
+     */
+    async function rebuildInvoicesFromStarts(applyBulkNames = false) {
+      const prevBySignature = new Map();
+      for (const inv of state.invoices) {
+        if (inv.signature && inv.name && inv.source === 'manual') {
+          prevBySignature.set(inv.signature, inv.name);
+        }
+      }
+
+      const noCache = document.getElementById('chkNoCache').checked;
+      const newInvoices = [];
+
+      for (let i = 0; i < state.starts.length; i++) {
+        const start = state.starts[i];
+        const end = i + 1 < state.starts.length ? state.starts[i + 1] - 1 : state.pages.length - 1;
+        const margin = state.pages[start].margin;
+        const signature = await computeGroupSignature(start, end, state.pages);
+
+        let name = null;
+        let source = '';
+
+        // 1. Preserve manual entry from current session if exact page group still exists
+        if (prevBySignature.has(signature)) {
+          name = prevBySignature.get(signature);
+          source = 'manual';
+        }
+
+        // 2. Match against existing split PDFs (Hamming <= 4)
+        if (!name && state.existingPdfs.length > 0) {
+          const match = findExistingMatch(start, end, state.pages, state.existingPdfs);
+          if (match) {
+            const candidate = sanitizeName(match.stem);
+            if (candidate) {
+              name = candidate;
+              source = 'existing file';
+            }
+          }
+        }
+
+        // 3. Match against localStorage cache (names.json)
+        if (!name && !noCache && state.cache[signature]) {
+          const candidate = sanitizeName(state.cache[signature]);
+          if (candidate) {
+            name = candidate;
+            source = 'names.json';
+          }
+        }
+
+        newInvoices.push({
+          id: i + 1,
+          start,
+          end,
+          margin,
+          name,
+          source,
+          signature,
+          status: 'skipped',
+          detail: '',
+        });
+      }
+
+      state.invoices = newInvoices;
+
+      if (applyBulkNames && state.bulkNames.length > 0) {
+        applyBulkNamesToUnnamed();
+      }
+
+      recomputeInvoiceStatuses();
+    }
+
+    /**
+     * Apply queued bulk names to unnamed invoices in order
+     */
+    function applyBulkNamesToUnnamed() {
+      if (state.bulkNames.length === 0) return 0;
+      let iterIdx = 0;
+      let appliedCount = 0;
+      for (const inv of state.invoices) {
+        if (!inv.name && iterIdx < state.bulkNames.length) {
+          const candidate = sanitizeName(state.bulkNames[iterIdx++]);
+          if (candidate) {
+            inv.name = candidate;
+            inv.source = 'names file';
+            appliedCount++;
+          }
+        }
+      }
+      recomputeInvoiceStatuses();
+      return appliedCount;
+    }
+
+    /**
+     * Recompute duplicate detection, status labels, and summary counters
+     */
+    function recomputeInvoiceStatuses() {
+      const seenNames = new Set();
+      let namedCount = 0;
+      let unnamedCount = 0;
+      let lowConfCount = 0;
+
+      for (let i = 0; i < state.invoices.length; i++) {
+        const inv = state.invoices[i];
+        inv.id = i + 1;
+        if (Math.abs(inv.margin) < 8) lowConfCount++;
+
+        if (!inv.name) {
+          inv.status = 'skipped';
+          inv.detail = 'no FNG name supplied';
+          unnamedCount++;
+          continue;
+        }
+
+        const lower = inv.name.toLowerCase();
+        if (seenNames.has(lower)) {
+          inv.status = 'duplicate';
+          inv.detail = 'duplicate name in this run';
+          unnamedCount++;
+        } else {
+          seenNames.add(lower);
+          inv.status = inv.source === 'existing file' ? 'matched' : 'ready';
+          inv.detail = inv.source || 'ready to export';
+          namedCount++;
+        }
+      }
+
+      // Update top summary pills
+      document.getElementById('statInvoicesCount').textContent = state.invoices.length;
+      document.getElementById('statPagesCount').textContent = state.pages.length;
+      document.getElementById('statNamedCount').textContent = namedCount;
+      document.getElementById('statUnnamedCount').textContent = unnamedCount;
+      document.getElementById('statUnnamedPill').classList.toggle('hidden', unnamedCount === 0);
+
+      document.getElementById('statLowConfCount').textContent = lowConfCount;
+      document.getElementById('statLowConfPill').classList.toggle('hidden', lowConfCount === 0);
+
+      document.getElementById('refsSourceTag').textContent = `Refs: ${state.refsSource}`;
+      document.getElementById('btnDownloadZipLabel').textContent = `Download ZIP (${namedCount} PDF${namedCount === 1 ? '' : 's'})`;
+      document.getElementById('btnDownloadZip').disabled = namedCount === 0;
+    }
+
+    /**
+     * Format 1-based page range label (e.g., "1" or "2-4")
+     */
+    function formatPagesLabel(inv) {
+      const first = inv.start + 1;
+      const last = inv.end + 1;
+      return first === last ? `${first}` : `${first}-${last}`;
+    }
+
+    /**
+     * Render all workspace panels
+     */
+    function renderAllWorkspace() {
+      recomputeInvoiceStatuses();
+      renderPageStrip();
+      renderInvoiceQueue();
+      renderInspector();
+    }
+
+    /**
+     * Render Horizontal Page Strip & Boundary Editor
+     */
+    function renderPageStrip() {
+      const container = document.getElementById('pageStripContainer');
+      container.innerHTML = '';
+
+      const startSet = new Set(state.starts);
+      // Map each page index to its invoice index
+      const pageToInvoiceIdx = new Array(state.pages.length).fill(0);
+      state.invoices.forEach((inv, idx) => {
+        for (let p = inv.start; p <= inv.end; p++) {
+          pageToInvoiceIdx[p] = idx;
+        }
+      });
+
+      state.pages.forEach((page, pIdx) => {
+        const isStart = startSet.has(pIdx);
+        const invIdx = pageToInvoiceIdx[pIdx];
+        const isSelectedInvoice = invIdx === state.selectedInvoiceIdx;
+        const isSelectedPage =
+          isSelectedInvoice &&
+          state.invoices[invIdx] &&
+          state.invoices[invIdx].start + state.selectedSubPageOffset === pIdx;
+
+        const card = document.createElement('div');
+        card.className = `shrink-0 w-28 rounded-xl border p-1.5 flex flex-col justify-between transition cursor-pointer select-none ${
+          isSelectedPage
+            ? 'border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-500/30'
+            : isSelectedInvoice
+            ? 'border-indigo-300 bg-indigo-50/30'
+            : 'border-slate-200 bg-slate-50/70 hover:border-slate-300'
+        }`;
+
+        const marginStr = `${page.margin >= 0 ? '+' : ''}${page.margin}`;
+        const marginColor =
+          page.margin >= 10
+            ? 'text-emerald-700 bg-emerald-100/80'
+            : page.margin >= 0
+            ? 'text-amber-700 bg-amber-100/80'
+            : 'text-slate-600 bg-slate-200/80';
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between gap-1 mb-1">
+            <span class="text-[11px] font-bold font-mono text-slate-700">P.${pIdx + 1}</span>
+            <span class="px-1.5 py-0.2 rounded text-[10px] font-mono font-semibold ${marginColor}" title="d_cont (${page.dCont}) - d_first (${page.dFirst})">
+              ${marginStr}
+            </span>
+          </div>
+          <div class="relative mx-auto rounded overflow-hidden border border-slate-200 bg-white">
+            <img src="${page.thumbDataUrl}" alt="Page ${pIdx + 1}" class="w-24 h-32 object-contain block" />
+            <span class="absolute bottom-1 left-1 px-1.5 py-0.2 rounded bg-slate-900/75 text-white text-[10px] font-semibold">
+              Inv #${invIdx + 1}
+            </span>
+          </div>
+          <div class="mt-1.5">
+            ${
+              pIdx === 0
+                ? `<div class="w-full py-1 text-center text-[10px] font-semibold uppercase tracking-wider rounded-md bg-indigo-600 text-white">Start #1</div>`
+                : `<button type="button" data-toggle-page="${pIdx}" class="w-full py-1 px-1.5 text-[10px] font-semibold rounded-md transition cursor-pointer ${
+                    isStart
+                      ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-100'
+                  }">
+                    ${isStart ? '✂ Split (Merge)' : '+ Split Here'}
+                  </button>`
+            }
+          </div>
+        `;
+
+        card.addEventListener('click', (e) => {
+          const toggleBtn = e.target.closest('[data-toggle-page]');
+          if (toggleBtn) {
+            e.stopPropagation();
+            toggleBoundaryAtPage(Number(toggleBtn.dataset.togglePage));
+            return;
+          }
+          const targetInvIdx = pageToInvoiceIdx[pIdx];
+          const subOffset = pIdx - state.invoices[targetInvIdx].start;
+          selectInvoice(targetInvIdx, false, subOffset);
+        });
+
+        container.appendChild(card);
+      });
+    }
+
+    /**
+     * Toggle split/merge boundary at 0-based page index (pIdx > 0)
+     */
+    async function toggleBoundaryAtPage(pIdx) {
+      if (pIdx <= 0 || pIdx >= state.pages.length) return;
+      const idx = state.starts.indexOf(pIdx);
+      if (idx >= 0) {
+        state.starts.splice(idx, 1);
+      } else {
+        state.starts.push(pIdx);
+        state.starts.sort((a, b) => a - b);
+      }
+      await rebuildInvoicesFromStarts(false);
+      if (state.selectedInvoiceIdx >= state.invoices.length) {
+        state.selectedInvoiceIdx = Math.max(0, state.invoices.length - 1);
+      }
+      state.selectedSubPageOffset = 0;
+      renderAllWorkspace();
+    }
+
+    /**
+     * Render Left Panel Invoice Queue
+     */
+    function renderInvoiceQueue() {
+      const list = document.getElementById('invoiceQueueList');
+      list.innerHTML = '';
+
+      const filtered = state.invoices
+        .map((inv, idx) => ({ inv, idx }))
+        .filter(({ inv }) => {
+          if (state.queueFilter === 'unnamed') return !inv.name || inv.status === 'duplicate';
+          if (state.queueFilter === 'lowconf') return Math.abs(inv.margin) < 8;
+          return true;
+        });
+
+      if (filtered.length === 0) {
+        list.innerHTML = `<div class="p-8 text-center text-xs text-slate-500">No invoices match this filter.</div>`;
+        return;
+      }
+
+      for (const { inv, idx } of filtered) {
+        const isSelected = idx === state.selectedInvoiceIdx;
+        const confText = `${confidenceLabel(inv.margin)} (${inv.margin >= 0 ? '+' : ''}${inv.margin})`;
+        const isLowConf = Math.abs(inv.margin) < 8;
+
+        const confBadgeClass =
+          inv.margin >= 10
+            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            : inv.margin >= 5
+            ? 'bg-amber-50 text-amber-700 border-amber-200'
+            : 'bg-rose-50 text-rose-700 border-rose-200';
+
+        let statusBadge = '';
+        if (inv.status === 'duplicate') {
+          statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-700">Duplicate</span>`;
+        } else if (!inv.name) {
+          statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800">Needs FNG</span>`;
+        } else {
+          const sourceLabel =
+            inv.source === 'existing file'
+              ? 'Matched'
+              : inv.source === 'names.json'
+              ? 'Cached'
+              : inv.source === 'names file'
+              ? 'Bulk List'
+              : inv.source === 'placeholder'
+              ? 'Placeholder'
+              : 'Named';
+          statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-700">${sourceLabel}</span>`;
+        }
+
+        const item = document.createElement('div');
+        item.dataset.invoiceIdx = idx;
+        item.className = `rounded-xl border p-2.5 transition cursor-pointer ${
+          isSelected
+            ? 'border-indigo-600 bg-indigo-50/50 ring-1 ring-indigo-500/30'
+            : 'border-slate-200 bg-white hover:border-slate-300'
+        }`;
+
+        item.innerHTML = `
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="text-xs font-bold text-slate-900">#${inv.id}</span>
+              <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] font-medium">
+                p.${formatPagesLabel(inv)}
+              </span>
+              <span class="px-1.5 py-0.5 rounded border text-[10px] font-medium ${confBadgeClass}" title="Confidence margin">
+                ${isLowConf ? '⚠ ' : ''}${confText}
+              </span>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              ${statusBadge}
+              <button type="button" data-download-single="${idx}" class="p-1 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer" title="Download ${escapeHtml(inv.name || 'invoice')}.pdf">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <input
+              type="text"
+              data-fng-input="${idx}"
+              value="${escapeHtml(inv.name || '')}"
+              placeholder="Enter FNG number..."
+              class="w-full px-2.5 py-1.5 text-xs font-mono rounded-lg border ${
+                inv.status === 'duplicate'
+                  ? 'border-rose-400 bg-rose-50/50 text-rose-900'
+                  : 'border-slate-300 bg-slate-50 focus:bg-white text-slate-900'
+              } focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+        `;
+
+        item.addEventListener('click', (e) => {
+          const dlBtn = e.target.closest('[data-download-single]');
+          if (dlBtn) {
+            e.stopPropagation();
+            downloadSingleInvoice(Number(dlBtn.dataset.downloadSingle));
+            return;
+          }
+          if (e.target.matches('input')) {
+            if (state.selectedInvoiceIdx !== idx) {
+              selectInvoice(idx, false, 0);
+            }
+            return;
+          }
+          selectInvoice(idx, true, 0);
+        });
+
+        const input = item.querySelector('input');
+        input.addEventListener('input', (e) => {
+          handleFngNameChange(idx, e.target.value, false);
+        });
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            handleFngNameChange(idx, e.target.value, true);
+            advanceToNextUnnamed(idx);
+          }
+        });
+        input.addEventListener('blur', (e) => {
+          handleFngNameChange(idx, e.target.value, true);
+        });
+
+        list.appendChild(item);
+      }
+    }
+
+    /**
+     * Update an invoice's FNG name, persist to cache, and sync UI
+     */
+    function handleFngNameChange(invIdx, rawValue, normalizeInput) {
+      const inv = state.invoices[invIdx];
+      if (!inv) return;
+
+      const sanitized = sanitizeName(rawValue);
+      inv.name = sanitized || null;
+      inv.source = sanitized ? 'manual' : '';
+
+      if (normalizeInput) {
+        const queueInput = document.querySelector(`[data-fng-input="${invIdx}"]`);
+        if (queueInput && queueInput.value !== (sanitized || '')) {
+          queueInput.value = sanitized || '';
+        }
+        if (state.selectedInvoiceIdx === invIdx) {
+          const quickInput = document.getElementById('inspectorQuickInput');
+          if (quickInput.value !== (sanitized || '')) {
+            quickInput.value = sanitized || '';
+          }
+        }
+      }
+
+      if (sanitized && inv.signature) {
+        state.cache[inv.signature] = sanitized;
+        saveCacheToStorage();
+      }
+
+      recomputeInvoiceStatuses();
+      // Update badges in queue without destroying active input focus
+      renderInvoiceQueuePreserveFocus();
+    }
+
+    /**
+     * Re-render queue while keeping focus & cursor position in active input
+     */
+    function renderInvoiceQueuePreserveFocus() {
+      const activeEl = document.activeElement;
+      const activeIdx = activeEl && activeEl.dataset ? activeEl.dataset.fngInput : null;
+      const selStart = activeEl ? activeEl.selectionStart : null;
+      const selEnd = activeEl ? activeEl.selectionEnd : null;
+
+      renderInvoiceQueue();
+
+      if (activeIdx !== null && activeIdx !== undefined) {
+        const restored = document.querySelector(`[data-fng-input="${activeIdx}"]`);
+        if (restored) {
+          restored.focus();
+          if (selStart !== null && selEnd !== null) {
+            restored.setSelectionRange(selStart, selEnd);
+          }
+        }
+      }
+    }
+
+    /**
+     * Advance selection & focus to the next unnamed invoice after currentIdx
+     */
+    function advanceToNextUnnamed(currentIdx) {
+      const total = state.invoices.length;
+      for (let step = 1; step <= total; step++) {
+        const candidateIdx = (currentIdx + step) % total;
+        const cand = state.invoices[candidateIdx];
+        if (!cand.name || cand.status === 'duplicate') {
+          selectInvoice(candidateIdx, true, 0);
+          return;
+        }
+      }
+      showToast('All invoices have unique FNG names!', 'success');
+    }
+
+    /**
+     * Select an invoice in the workspace and render its page in the right inspector
+     */
+    function selectInvoice(invIdx, focusQuickInput = false, subPageOffset = 0) {
+      if (invIdx < 0 || invIdx >= state.invoices.length) return;
+      state.selectedInvoiceIdx = invIdx;
+      const inv = state.invoices[invIdx];
+      const maxOffset = inv.end - inv.start;
+      state.selectedSubPageOffset = Math.min(Math.max(0, subPageOffset), maxOffset);
+      state.inspectorRotation = 0;
+
+      renderPageStrip();
+      renderInvoiceQueue();
+      renderInspector();
+
+      // Scroll selected queue card into view
+      const queueCard = document.querySelector(`[data-invoice-idx="${invIdx}"]`);
+      if (queueCard) {
+        queueCard.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+
+      if (focusQuickInput) {
+        const quickInput = document.getElementById('inspectorQuickInput');
+        quickInput.focus();
+        quickInput.select();
+      }
+    }
+
+    /**
+     * Render the high-resolution page preview in the Right Inspector
+     */
+    async function renderInspector() {
+      const inv = state.invoices[state.selectedInvoiceIdx];
+      if (!inv || !state.pdfJsDoc) return;
+
+      const pageCountInInv = inv.end - inv.start + 1;
+      const actualPageIdx = inv.start + state.selectedSubPageOffset;
+      const pageInfo = state.pages[actualPageIdx];
+
+      document.getElementById('inspectorInvoiceBadge').textContent = `Invoice #${inv.id} (p.${formatPagesLabel(inv)})`;
+      document.getElementById('inspectorPageIndicator').textContent = `Page ${state.selectedSubPageOffset + 1} of ${pageCountInInv} (PDF p.${actualPageIdx + 1})`;
+      document.getElementById('btnPrevInvoicePage').disabled = state.selectedSubPageOffset <= 0;
+      document.getElementById('btnNextInvoicePage').disabled = state.selectedSubPageOffset >= pageCountInInv - 1;
+      document.getElementById('inspectorHashMargin').textContent = `d_first:${pageInfo.dFirst} d_cont:${pageInfo.dCont} (${pageInfo.margin >= 0 ? '+' : ''}${pageInfo.margin})`;
+
+      const quickInput = document.getElementById('inspectorQuickInput');
+      if (document.activeElement !== quickInput) {
+        quickInput.value = inv.name || '';
+      }
+
+      const viewportContainer = document.getElementById('inspectorViewport');
+      const canvas = document.getElementById('inspectorCanvas');
+      const pdfPage = await state.pdfJsDoc.getPage(actualPageIdx + 1);
+
+      const baseViewport = pdfPage.getViewport({ scale: 1, rotation: state.inspectorRotation });
+      let targetScale = 1.5;
+      if (state.inspectorZoom === 'fit') {
+        const availWidth = Math.max(320, viewportContainer.clientWidth - 48);
+        targetScale = Math.min(2.2, Math.max(0.75, availWidth / baseViewport.width));
+      } else {
+        targetScale = state.inspectorZoom;
+      }
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const renderViewport = pdfPage.getViewport({ scale: targetScale * dpr, rotation: state.inspectorRotation });
+
+      canvas.width = Math.round(renderViewport.width);
+      canvas.height = Math.round(renderViewport.height);
+      canvas.style.width = `${Math.round(renderViewport.width / dpr)}px`;
+      canvas.style.height = `${Math.round(renderViewport.height / dpr)}px`;
+
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      await pdfPage.render({ canvasContext: ctx, viewport: renderViewport }).promise;
+    }
+
+    /**
+     * Build a single split PDF using pdf-lib with /Title metadata
+     */
+    async function buildSingleInvoicePdfBytes(srcPdfLibDoc, inv) {
+      const outDoc = await PDFLib.PDFDocument.create();
+      const pageIndices = [];
+      for (let p = inv.start; p <= inv.end; p++) {
+        pageIndices.push(p);
+      }
+      const copiedPages = await outDoc.copyPages(srcPdfLibDoc, pageIndices);
+      for (const page of copiedPages) {
+        outDoc.addPage(page);
+      }
+      if (inv.name) {
+        outDoc.setTitle(inv.name);
+      }
+      return await outDoc.save();
+    }
+
+    /**
+     * Download an individual invoice PDF
+     */
+    async function downloadSingleInvoice(invIdx) {
+      const inv = state.invoices[invIdx];
+      if (!inv || !state.primaryBytes) return;
+
+      const filename = inv.name ? `${inv.name}.pdf` : `FNG-UNKNOWN-p${formatPagesLabel(inv)}.pdf`;
+      try {
+        const srcDoc = await PDFLib.PDFDocument.load(state.primaryBytes, { ignoreEncryption: true });
+        const pdfBytes = await buildSingleInvoicePdfBytes(srcDoc, inv);
+        triggerBlobDownload(new Blob([pdfBytes], { type: 'application/pdf' }), filename);
+        showToast(`Downloaded ${filename}`, 'success');
+      } catch (err) {
+        showToast(`Export failed: ${err.message}`, 'error');
+      }
+    }
+
+    /**
+     * Download all uniquely named invoices bundled into a single .zip via JSZip
+     */
+    async function downloadAllNamedZip() {
+      const validInvoices = state.invoices.filter((inv) => inv.name && inv.status !== 'duplicate');
+      if (validInvoices.length === 0) {
+        showToast('No uniquely named invoices ready to export.', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('btnDownloadZip');
+      const label = document.getElementById('btnDownloadZipLabel');
+      const origText = label.textContent;
+      btn.disabled = true;
+      label.textContent = 'Building ZIP...';
+
+      try {
+        const srcDoc = await PDFLib.PDFDocument.load(state.primaryBytes, { ignoreEncryption: true });
+        const zip = new JSZip();
+
+        for (let i = 0; i < validInvoices.length; i++) {
+          const inv = validInvoices[i];
+          label.textContent = `Packing ${i + 1}/${validInvoices.length}...`;
+          const pdfBytes = await buildSingleInvoicePdfBytes(srcDoc, inv);
+          zip.file(`${inv.name}.pdf`, pdfBytes);
+        }
+
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        const baseStem = state.primaryFile.name.replace(/\.pdf$/i, '');
+        triggerBlobDownload(zipBlob, `${baseStem}-split-invoices.zip`);
+        showToast(`Exported ${validInvoices.length} PDF(s) to ZIP!`, 'success');
+      } catch (err) {
+        showToast(`ZIP export failed: ${err.message}`, 'error');
+      } finally {
+        btn.disabled = false;
+        label.textContent = origText;
+      }
+    }
+
+    /**
+     * Download report.csv matching Python's CSV columns:
+     * invoice,start_page,end_page,confidence_margin,name,status,detail
+     */
+    function downloadCsvReport() {
+      const rows = [
+        ['invoice', 'start_page', 'end_page', 'confidence_margin', 'name', 'status', 'detail'],
+      ];
+
+      state.invoices.forEach((inv, idx) => {
+        const marginStr = `${inv.margin >= 0 ? '+' : ''}${inv.margin}`;
+        const statusStr = inv.name && inv.status !== 'duplicate' ? 'created' : 'skipped';
+        rows.push([
+          idx + 1,
+          inv.start + 1,
+          inv.end + 1,
+          marginStr,
+          inv.name || '',
+          statusStr,
+          inv.detail || '',
+        ]);
+      });
+
+      const csvContent =
+        '\uFEFF' +
+        rows
+          .map((r) =>
+            r
+              .map((cell) => {
+                const s = String(cell);
+                return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+              })
+              .join(',')
+          )
+          .join('\r\n');
+
+      triggerBlobDownload(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }), 'report.csv');
+      showToast('Downloaded report.csv', 'success');
+    }
+
+    function triggerBlobDownload(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    /**
+     * Parse newline-separated names.txt content (ignoring blank lines & # comments)
+     */
+    function parseNamesText(text) {
+      return text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0 && !line.startsWith('#'));
+    }
+
+    /**
+     * Wire up all DOM event listeners
+     */
+    function initEventListeners() {
+      // Load persisted cache
+      state.cache = loadCacheFromStorage();
+      updateCacheUi();
+
+      // Primary Dropzone
+      const primaryDropzone = document.getElementById('primaryDropzone');
+      const primaryInput = document.getElementById('primaryPdfInput');
+
+      const handlePrimarySelected = (file) => {
+        if (!file || !file.name.toLowerCase().endsWith('.pdf')) {
+          showToast('Please select a valid .pdf file.', 'warning');
+          return;
+        }
+        state.primaryFile = file;
+        document.getElementById('selectedPrimaryName').textContent = `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+        document.getElementById('selectedPrimaryChip').classList.remove('hidden');
+        document.getElementById('btnAnalyzePdf').disabled = false;
+      };
+
+      primaryDropzone.addEventListener('click', () => primaryInput.click());
+      primaryInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) handlePrimarySelected(e.target.files[0]);
+      });
+      primaryDropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        primaryDropzone.classList.add('border-indigo-600', 'bg-indigo-50');
+      });
+      primaryDropzone.addEventListener('dragleave', () => {
+        primaryDropzone.classList.remove('border-indigo-600', 'bg-indigo-50');
+      });
+      primaryDropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        primaryDropzone.classList.remove('border-indigo-600', 'bg-indigo-50');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          handlePrimarySelected(e.dataTransfer.files[0]);
+        }
+      });
+
+      // Secondary Existing Split PDFs Dropzone
+      const existingDropzone = document.getElementById('existingDropzone');
+      const existingInput = document.getElementById('existingPdfsInput');
+      const btnClearExisting = document.getElementById('btnClearExisting');
+
+      const handleExistingSelected = (fileList) => {
+        const pdfs = Array.from(fileList).filter((f) => f.name.toLowerCase().endsWith('.pdf'));
+        state.existingFiles = pdfs;
+        document.getElementById('existingFilesStatus').textContent = `${pdfs.length} reference PDF${pdfs.length === 1 ? '' : 's'} selected`;
+        btnClearExisting.classList.toggle('hidden', pdfs.length === 0);
+      };
+
+      existingDropzone.addEventListener('click', (e) => {
+        if (e.target === btnClearExisting) return;
+        existingInput.click();
+      });
+      existingInput.addEventListener('change', (e) => handleExistingSelected(e.target.files || []));
+      existingDropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        existingDropzone.classList.add('border-indigo-500', 'bg-indigo-50/40');
+      });
+      existingDropzone.addEventListener('dragleave', () => {
+        existingDropzone.classList.remove('border-indigo-500', 'bg-indigo-50/40');
+      });
+      existingDropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        existingDropzone.classList.remove('border-indigo-500', 'bg-indigo-50/40');
+        if (e.dataTransfer.files) handleExistingSelected(e.dataTransfer.files);
+      });
+      btnClearExisting.addEventListener('click', (e) => {
+        e.stopPropagation();
+        existingInput.value = '';
+        handleExistingSelected([]);
+      });
+
+      // Analyze & New Batch Buttons
+      document.getElementById('btnAnalyzePdf').addEventListener('click', runAnalysis);
+      document.getElementById('btnNewBatch').addEventListener('click', () => {
+        document.getElementById('workspaceSection').classList.add('hidden');
+        document.getElementById('uploadSection').classList.remove('hidden');
+        document.getElementById('btnNewBatch').classList.add('hidden');
+        document.getElementById('btnAnalyzePdf').disabled = !state.primaryFile;
+      });
+
+      // Auto-Detect Boundaries Reset
+      document.getElementById('btnResetBoundaries').addEventListener('click', async () => {
+        state.starts = detectAutoStarts();
+        await rebuildInvoicesFromStarts(false);
+        state.selectedInvoiceIdx = 0;
+        state.selectedSubPageOffset = 0;
+        renderAllWorkspace();
+        showToast('Restored auto-detected layout boundaries.', 'info');
+      });
+
+      // Queue Filters
+      document.querySelectorAll('.queue-filter-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.queueFilter = btn.dataset.filter;
+          document.querySelectorAll('.queue-filter-btn').forEach((b) => {
+            b.classList.remove('bg-white', 'text-slate-900', 'shadow-2xs');
+            b.classList.add('text-slate-600');
+          });
+          btn.classList.add('bg-white', 'text-slate-900', 'shadow-2xs');
+          btn.classList.remove('text-slate-600');
+          renderInvoiceQueue();
+        });
+      });
+
+      // Inspector Controls
+      document.getElementById('btnPrevInvoicePage').addEventListener('click', () => {
+        if (state.selectedSubPageOffset > 0) {
+          state.selectedSubPageOffset--;
+          renderPageStrip();
+          renderInspector();
+        }
+      });
+      document.getElementById('btnNextInvoicePage').addEventListener('click', () => {
+        const inv = state.invoices[state.selectedInvoiceIdx];
+        if (inv && state.selectedSubPageOffset < inv.end - inv.start) {
+          state.selectedSubPageOffset++;
+          renderPageStrip();
+          renderInspector();
+        }
+      });
+      document.getElementById('btnRotateLeft').addEventListener('click', () => {
+        state.inspectorRotation = (state.inspectorRotation + 270) % 360;
+        renderInspector();
+      });
+      document.getElementById('btnRotateRight').addEventListener('click', () => {
+        state.inspectorRotation = (state.inspectorRotation + 90) % 360;
+        renderInspector();
+      });
+      document.getElementById('btnZoomIn').addEventListener('click', () => {
+        const cur = state.inspectorZoom === 'fit' ? 1.25 : state.inspectorZoom;
+        state.inspectorZoom = Math.min(3.5, +(cur + 0.25).toFixed(2));
+        renderInspector();
+      });
+      document.getElementById('btnZoomOut').addEventListener('click', () => {
+        const cur = state.inspectorZoom === 'fit' ? 1.25 : state.inspectorZoom;
+        state.inspectorZoom = Math.max(0.5, +(cur - 0.25).toFixed(2));
+        renderInspector();
+      });
+      document.getElementById('btnZoomFit').addEventListener('click', () => {
+        state.inspectorZoom = 'fit';
+        renderInspector();
+      });
+
+      // Inspector Quick FNG Input Bar
+      const quickInput = document.getElementById('inspectorQuickInput');
+      quickInput.addEventListener('input', (e) => {
+        handleFngNameChange(state.selectedInvoiceIdx, e.target.value, false);
+      });
+      quickInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleFngNameChange(state.selectedInvoiceIdx, e.target.value, true);
+          advanceToNextUnnamed(state.selectedInvoiceIdx);
+        }
+      });
+      document.getElementById('btnInspectorNextUnnamed').addEventListener('click', () => {
+        handleFngNameChange(state.selectedInvoiceIdx, quickInput.value, true);
+        advanceToNextUnnamed(state.selectedInvoiceIdx);
+      });
+      document.getElementById('btnInspectorDownloadSingle').addEventListener('click', () => {
+        downloadSingleInvoice(state.selectedInvoiceIdx);
+      });
+
+      // Fill Placeholders (--placeholder)
+      document.getElementById('btnFillPlaceholders').addEventListener('click', () => {
+        let filled = 0;
+        for (const inv of state.invoices) {
+          if (!inv.name) {
+            inv.name = `FNG-UNKNOWN-p${formatPagesLabel(inv)}`;
+            inv.source = 'placeholder';
+            filled++;
+          }
+        }
+        renderAllWorkspace();
+        showToast(
+          filled > 0 ? `Filled ${filled} unnamed invoice(s) with placeholders.` : 'No unnamed invoices remaining.',
+          'info'
+        );
+      });
+
+      // Exports
+      document.getElementById('btnDownloadZip').addEventListener('click', downloadAllNamedZip);
+      document.getElementById('btnDownloadCsv').addEventListener('click', downloadCsvReport);
+
+      // Modals Open/Close
+      const openModal = (id) => document.getElementById(id).classList.remove('hidden');
+      const closeModal = (id) => document.getElementById(id).classList.add('hidden');
+
+      document.getElementById('btnOpenBulkModal').addEventListener('click', () => openModal('bulkNamesModal'));
+      document.getElementById('btnInlineBulk').addEventListener('click', () => openModal('bulkNamesModal'));
+      document.getElementById('btnOpenCacheModal').addEventListener('click', () => {
+        updateCacheUi();
+        openModal('cacheModal');
+      });
+
+      document.querySelectorAll('[data-close-modal]').forEach((btn) => {
+        btn.addEventListener('click', () => closeModal(btn.dataset.closeModal));
+      });
+
+      // Bulk Names Modal Logic
+      const bulkTextarea = document.getElementById('bulkNamesTextarea');
+      const bulkFileInput = document.getElementById('bulkNamesFileInput');
+      const updateBulkPreviewCount = () => {
+        const parsed = parseNamesText(bulkTextarea.value);
+        document.getElementById('bulkParsedCount').textContent = `${parsed.length} valid name${parsed.length === 1 ? '' : 's'}`;
+      };
+
+      bulkTextarea.addEventListener('input', updateBulkPreviewCount);
+      bulkFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const text = await file.text();
+        bulkTextarea.value = text;
+        updateBulkPreviewCount();
+      });
+
+      document.getElementById('btnClearBulkNames').addEventListener('click', () => {
+        bulkTextarea.value = '';
+        state.bulkNames = [];
+        updateBulkPreviewCount();
+        document.getElementById('bulkNamesBadge').classList.add('hidden');
+      });
+
+      document.getElementById('btnApplyBulkNames').addEventListener('click', () => {
+        state.bulkNames = parseNamesText(bulkTextarea.value);
+        const badge = document.getElementById('bulkNamesBadge');
+        badge.textContent = state.bulkNames.length;
+        badge.classList.toggle('hidden', state.bulkNames.length === 0);
+
+        if (state.invoices.length > 0 && state.bulkNames.length > 0) {
+          const applied = applyBulkNamesToUnnamed();
+          renderAllWorkspace();
+          showToast(`Applied ${applied} name(s) from bulk list.`, 'success');
+        } else {
+          showToast(`Saved ${state.bulkNames.length} bulk name(s) for next run.`, 'info');
+        }
+        closeModal('bulkNamesModal');
+      });
+
+      // Cache Modal Logic
+      document.getElementById('btnExportCache').addEventListener('click', () => {
+        const json = JSON.stringify(state.cache, null, 2) + '\n';
+        triggerBlobDownload(new Blob([json], { type: 'application/json' }), 'names.json');
+      });
+
+      document.getElementById('importCacheInput').addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const parsed = JSON.parse(text);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new Error('Invalid JSON object format.');
+          }
+          let merged = 0;
+          for (const [k, v] of Object.entries(parsed)) {
+            const clean = sanitizeName(String(v));
+            if (clean) {
+              state.cache[String(k)] = clean;
+              merged++;
+            }
+          }
+          saveCacheToStorage();
+          if (state.invoices.length > 0) {
+            await rebuildInvoicesFromStarts(false);
+            renderAllWorkspace();
+          }
+          showToast(`Imported ${merged} cached signature(s).`, 'success');
+        } catch (err) {
+          showToast(`Import failed: ${err.message}`, 'error');
+        }
+        e.target.value = '';
+      });
+
+      document.getElementById('btnClearCache').addEventListener('click', () => {
+        state.cache = {};
+        localStorage.removeItem(CACHE_STORAGE_KEY);
+        updateCacheUi();
+        showToast('Cleared signature cache.', 'info');
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', initEventListeners);
+  </script>
+</body>
+</html>
